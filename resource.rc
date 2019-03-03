@@ -1,0 +1,14 @@
+#include "resource.h"
+
+IDI_SYSTRAY_NORMAL      ICON                    "generic_picture.ico"
+
+IDR_TRAYMENU MENU
+BEGIN
+    POPUP ""
+    BEGIN
+        MENUITEM "Abut...",                         ID_TRAYMENU_ABOUT
+        MENUITEM SEPARATOR
+        MENUITEM "Exit",                            ID_TRAYMENU_EXIT
+    END
+END
+
