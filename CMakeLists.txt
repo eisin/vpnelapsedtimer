@@ -3,7 +3,8 @@ project(vpnelapsedtimer C)
 
 set(CMAKE_C_STANDARD 99)
 
-add_executable(vpnelapsedtimer main.c resource.h resource.rc)
+add_executable(vpnelapsedtimer src/main.c src/resource.h src/resource.rc)
+add_definitions(-DUNICODE -D_UNICODE)
 
 set(CMAKE_RC_COMPILER_INIT windres)
 ENABLE_LANGUAGE(RC)
