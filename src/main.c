@@ -150,12 +150,12 @@ unsigned long ExecCommand(wchar_t *cmdline, char *output, unsigned long length) 
     unsigned long lngReadBytes = 0;
     while (!isProcessSignaled) {
         DWORD lpTotalBytesAvail = 0;
-        if (WaitForSingleObject(pi.hProcess, 1000) == WAIT_OBJECT_0) {
+        if (WaitForSingleObject(pi.hProcess, 10000) == WAIT_OBJECT_0) {
             DWORD lngExitCode = 0;
             GetExitCodeProcess(pi.hProcess, &lngExitCode);
             if (lngExitCode != 0) {
 #ifdef DEBUG
-                printf("exit code error =%d\n", lngExitCode);
+                printf("exit code error =%ld\n", lngExitCode);
                 fflush(stdout);
 #endif
                 return 4;
@@ -165,7 +165,7 @@ unsigned long ExecCommand(wchar_t *cmdline, char *output, unsigned long length) 
         PeekNamedPipe(hReadPipe, NULL, 0, NULL, &lpTotalBytesAvail, NULL);
         if (lpTotalBytesAvail == 0) {
             lngWaitCount += 1;
-            if (lngWaitCount > 30) {
+            if (lngWaitCount > 3) {
                 return 2;
             }
             continue;
@@ -189,53 +189,66 @@ unsigned long ExecCommand(wchar_t *cmdline, char *output, unsigned long length) 
 }
 
 void CheckVpnConnection(HWND hwnd) {
+    wchar_t szCommandLine[10240];
     char szOutput[10240];
     unsigned long result;
     wchar_t szState[1024];
 
     ZeroMemory(szOutput, sizeof(szOutput));
-    result = ExecCommand(g_szProfileVpnExecutable, szOutput, sizeof(szOutput));
+    wsprintfW(szCommandLine, TEXT("\"%s\" stats"), g_szProfileVpnExecutable);
+    result = ExecCommand(szCommandLine, szOutput, sizeof(szOutput));
     if (result > 0) {
         wchar_t szMessage[10240];
         CloseApplication(hwnd);
-        wsprintfW(szMessage, TEXT("Could not execute %s (error %d)"), g_szProfileVpnExecutable, result);
+        wsprintfW(szMessage, TEXT("Could not execute %s (error %ld)"), g_szProfileVpnExecutable, result);
         MessageBox(hwnd, szMessage, g_szAppName, MB_ICONEXCLAMATION | MB_OK);
         exit(6);
     }
     char *line = strtok(szOutput, "\r\n");
+    boolean hasCheckedTimeConnected = 0;
+    boolean hasCheckedConnectState = 0;
     while (line) {
         char *pos;
         const char szTimeConnectedMatch[] = "Time Connected: ";
-        pos = strstr(line, szTimeConnectedMatch);
-        if (pos) {
-            pos += strlen(szTimeConnectedMatch);
-            if (*pos == '\0') {
-                line = strtok(NULL, "\r\n");
-                continue;
-            }
-            wchar_t szTime[10240];
-            mbstowcs(szTime, pos, sizeof(szTime));
-            signed long lngElapsedTimeInSecond = HHMMSSToSeconds(szTime);
-            if (lngElapsedTimeInSecond >= 0) {
-                ChangeElapsedTimeInSecond(hwnd, lngElapsedTimeInSecond);
+        if (!hasCheckedTimeConnected) {
+            pos = strstr(line, szTimeConnectedMatch);
+            if (pos) {
+                pos += strlen(szTimeConnectedMatch);
+                if (*pos == '\0') {
+                    line = strtok(NULL, "\r\n");
+                    continue;
+                }
+                while (*pos == ' ') {
+                    pos += 1;
+                }
+                wchar_t szTime[10240];
+                mbstowcs(szTime, pos, sizeof(szTime));
+                signed long lngElapsedTimeInSecond = HHMMSSToSeconds(szTime);
+                if (lngElapsedTimeInSecond >= 0) {
+                    ChangeElapsedTimeInSecond(hwnd, lngElapsedTimeInSecond);
+                }
+                hasCheckedTimeConnected = 1;
             }
         }
 
         const char szStateMatch[] = "state: ";
-        pos = strstr(line, szStateMatch);
-        if (pos) {
-            pos += strlen(szTimeConnectedMatch);
-            if (*pos == '\0') {
-                line = strtok(NULL, "\r\n");
-                continue;
-            }
+        if (!hasCheckedConnectState) {
+            pos = strstr(line, szStateMatch);
+            if (pos) {
+                pos += strlen(szStateMatch);
+                if (*pos == '\0') {
+                    line = strtok(NULL, "\r\n");
+                    continue;
+                }
 #ifdef DEBUG
-            printf("STATE=%s\n", pos);
-            fflush(stdout);
+                printf("STATE=%s\n", pos);
+                fflush(stdout);
 #endif
-            mbstowcs(szState, pos, sizeof(szState));
-            if (lstrcmpW(szState, g_szConnectState) != 0) {
-                ChangeConnectState(hwnd, szState);
+                mbstowcs(szState, pos, sizeof(szState));
+                if (lstrcmpW(szState, g_szConnectState) != 0) {
+                    ChangeConnectState(hwnd, szState);
+                }
+                hasCheckedConnectState = 1;
             }
         }
         line = strtok(NULL, "\r\n");
@@ -244,7 +257,7 @@ void CheckVpnConnection(HWND hwnd) {
 
 void ChangeConnectState(HWND hwnd, wchar_t *szNewState) {
     NOTIFYICONDATAW niData;
-    if (lstrcmpW(szNewState, TEXT("Disconnected")) == 0 && g_boolNotifyOnDisconnect != 0) {
+    if (lstrcmpW(g_szConnectState, TEXT("")) != 0 && lstrcmpW(szNewState, TEXT("Disconnected")) == 0 && g_boolNotifyOnDisconnect != 0) {
 #ifdef DEBUG
         printf("State Change: Disconnected\n");
         fflush(stdout);
@@ -256,11 +269,11 @@ void ChangeConnectState(HWND hwnd, wchar_t *szNewState) {
         niData.hWnd = hwnd;
         niData.uID = g_intNotifyIconId;
         niData.uFlags = NIF_INFO | NIF_SHOWTIP;
-        lstrcpynW(niData.szInfo, TEXT("VPN Connected"), sizeof(niData.szInfo));
+        lstrcpynW(niData.szInfo, TEXT("VPN Disconnected"), sizeof(niData.szInfo));
         lstrcpynW(niData.szInfoTitle, g_szAppName, sizeof(niData.szInfoTitle));
         Shell_NotifyIcon(NIM_MODIFY, &niData);
     }
-    if (lstrcmpW(szNewState, TEXT("Connected")) == 0 && g_boolNotifyOnConnect != 0) {
+    if (lstrcmpW(g_szConnectState, TEXT("")) != 0 && lstrcmpW(szNewState, TEXT("Connected")) == 0 && g_boolNotifyOnConnect != 0) {
 #ifdef DEBUG
         printf("State Change: Connected\n");
         fflush(stdout);
@@ -271,7 +284,7 @@ void ChangeConnectState(HWND hwnd, wchar_t *szNewState) {
         niData.hWnd = hwnd;
         niData.uID = g_intNotifyIconId;
         niData.uFlags = NIF_INFO | NIF_SHOWTIP;
-        lstrcpynW(niData.szInfo, TEXT("VPN Disconnected"), sizeof(niData.szInfo));
+        lstrcpynW(niData.szInfo, TEXT("VPN Connected"), sizeof(niData.szInfo));
         lstrcpynW(niData.szInfoTitle, g_szAppName, sizeof(niData.szInfoTitle));
         Shell_NotifyIcon(NIM_MODIFY, &niData);
     }
@@ -299,7 +312,7 @@ void TimerProc(HWND hwnd) {
     wchar_t time[100];
     SecondsToHHMMSS(g_lngCalculatedElapsedTimeInSecond, time);
 #ifdef DEBUG
-    wprintf(TEXT("state: [%s] elapsed: [%d sec] [%s]\n"), g_szConnectState, g_lngCalculatedElapsedTimeInSecond, time);
+    wprintf(TEXT("state: [%s] elapsed: [%ld sec] [%s]\n"), g_szConnectState, g_lngCalculatedElapsedTimeInSecond, time);
     fflush(stdout);
 #endif
 }
@@ -452,13 +465,13 @@ void ShowAboutWindow(HWND hwnd) {
                               "* Configuration *\n"
                               "File: %s\n"
                               "VpnExecutable: %s\n"
-                              "NotifyOnConnect: %d (1:Yes 0:No)\n"
-                              "NotifyOnDisconnect: %d (1:Yes 0:No)\n"
-                              "NotifyElapsedTime: %s (%d seconds)\n"
-                              "CheckIntervalInSecond: %d\n"
+                              "NotifyOnConnect: %ld (1:Yes 0:No)\n"
+                              "NotifyOnDisconnect: %ld (1:Yes 0:No)\n"
+                              "NotifyElapsedTime: %s (%ld seconds)\n"
+                              "CheckIntervalInSecond: %ld\n"
                               "\n"
                               "* Status *\n"
-                              "CalculatedElapsedTimeInSecond: %s (%d seconds)\n"
+                              "CalculatedElapsedTimeInSecond: %s (%ld seconds)\n"
                               "ConnectState: %s\n"),
               g_szAppName, g_szAppVersion, \
               g_szConfigFullPath,

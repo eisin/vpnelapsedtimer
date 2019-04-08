@@ -1,4 +1,7 @@
 #include "resource.h"
+#include <winuser.h>
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID	RT_MANIFEST "..\\res\\vpnelapsedtimer.exe.manifest"
 
 IDI_SYSTRAY_NORMAL      ICON                    "..\\res\\generic_picture.ico"
 

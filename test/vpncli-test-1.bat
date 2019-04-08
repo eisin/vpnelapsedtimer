@@ -1,5 +1,7 @@
 @echo off
 if "%1" == "stats" (
+  echo state: Connected
+  echo.
   echo [Tunnel information]
   echo.
   echo Time Connected: 01:17:33
