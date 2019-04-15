@@ -2,7 +2,6 @@
 #include "resource.h"
 #include <stdio.h>
 #include <string.h>
-#include <vss.h>
 
 #define UNUSED(x) (void)(x)
 
@@ -304,7 +303,7 @@ void ChangeElapsedTimeInSecond(HWND hwnd, unsigned long lngElapsedTimeInSecond) 
 
 void TimerProc(HWND hwnd) {
     static signed long intCallCount = -1;
-    bool boolNeedRefresh = 0;
+    int boolNeedRefresh = 0;
     if (g_lngCalculatedElapsedTimeInSecond >= 0) {
         SetCalculatedElapsedTimeInSecond(hwnd, g_lngCalculatedElapsedTimeInSecond + 1);
         boolNeedRefresh = 1;
