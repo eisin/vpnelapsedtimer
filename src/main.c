@@ -2,6 +2,7 @@
 #include "resource.h"
 #include <stdio.h>
 #include <string.h>
+#include <vss.h>
 
 #define UNUSED(x) (void)(x)
 
@@ -47,6 +48,8 @@ void ShowAboutWindow(HWND hwnd);
 void ReadConfiguration();
 
 void CloseApplication(HWND hwnd);
+
+void RefreshTrayIcon(HWND hwnd);
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow) {
@@ -301,13 +304,16 @@ void ChangeElapsedTimeInSecond(HWND hwnd, unsigned long lngElapsedTimeInSecond) 
 
 void TimerProc(HWND hwnd) {
     static signed long intCallCount = -1;
+    bool boolNeedRefresh = 0;
     if (g_lngCalculatedElapsedTimeInSecond >= 0) {
         SetCalculatedElapsedTimeInSecond(hwnd, g_lngCalculatedElapsedTimeInSecond + 1);
+        boolNeedRefresh = 1;
     }
     intCallCount += 1;
     if (intCallCount == 0 || intCallCount >= g_lngCheckIntervalInSecond) {
         intCallCount = 0;
         CheckVpnConnection(hwnd);
+        boolNeedRefresh = 1;
     }
     wchar_t time[100];
     SecondsToHHMMSS(g_lngCalculatedElapsedTimeInSecond, time);
@@ -315,6 +321,9 @@ void TimerProc(HWND hwnd) {
     wprintf(TEXT("state: [%s] elapsed: [%ld sec] [%s]\n"), g_szConnectState, g_lngCalculatedElapsedTimeInSecond, time);
     fflush(stdout);
 #endif
+    if (boolNeedRefresh) {
+        RefreshTrayIcon(hwnd);
+    }
 }
 
 void SetCalculatedElapsedTimeInSecond(HWND hwnd, long lngCalculatedElapsedTimeInSecond) {
@@ -339,6 +348,104 @@ void SetCalculatedElapsedTimeInSecond(HWND hwnd, long lngCalculatedElapsedTimeIn
 
             lngLastTick = lngCurrentTick;
         }
+    }
+}
+
+void RefreshTrayIcon(HWND hwnd) {
+    static HICON hOldIcon = NULL;
+    NOTIFYICONDATA niData;
+    if (hOldIcon) {
+        DestroyIcon(hOldIcon);
+    }
+    if (lstrcmpW(g_szConnectState, TEXT("Connected")) == 0) {
+        wchar_t time[100];
+        wchar_t text1[100];
+        wchar_t text2[100];
+        SecondsToHHMMSS(g_lngCalculatedElapsedTimeInSecond, time);
+        lstrcpynW(text1, time + 1, 2 + 1);
+        lstrcpynW(text2, time + 3, 2 + 1);
+
+        RECT rect;
+        SetRect(&rect, 0, 0, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
+        HDC hDC = GetDC(hwnd);
+        HDC hMemDC = CreateCompatibleDC(hDC);
+        HBITMAP hBitmap = CreateCompatibleBitmap(hDC, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
+        HGDIOBJ hOldBitmap = SelectObject(hMemDC, hBitmap);
+
+        HBRUSH hBrush = CreateSolidBrush(RGB(80, 80, 80));
+        FillRect(hMemDC, &rect, hBrush);
+        DeleteObject(hBrush);
+
+        LOGFONT lf;
+        ZeroMemory(&lf, sizeof(lf));
+        lf.lfHeight = 14;
+        lf.lfWeight = FW_NORMAL;
+        lf.lfOutPrecision = OUT_TT_PRECIS;
+        lf.lfQuality = ANTIALIASED_QUALITY;
+        lf.lfPitchAndFamily = FF_SWISS;
+        lstrcpy(lf.lfFaceName, TEXT("Arial"));
+
+
+        HFONT hFont = CreateFontIndirect(&lf);
+        HGDIOBJ hOldFont = SelectObject(hMemDC, hFont);
+        SetTextColor(hMemDC, RGB(255, 255, 255));
+        SetTextAlign(hMemDC, TA_BASELINE | TA_LEFT);
+        SetBkMode(hMemDC, TRANSPARENT);
+
+        TextOut(hMemDC, 0, GetSystemMetrics(SM_CYSMICON) / 2, text1, lstrlen(text1));
+        TextOut(hMemDC, 0, GetSystemMetrics(SM_CYSMICON) / 2 * 2, text2, lstrlen(text2));
+
+        HDC hMaskDC = CreateCompatibleDC(hDC);
+        HBITMAP hMaskBitmap = CreateCompatibleBitmap(hMaskDC, GetSystemMetrics(SM_CXSMICON),
+                                                     GetSystemMetrics(SM_CYSMICON));
+        HGDIOBJ hOldMaskBitmap = SelectObject(hMaskDC, hMaskBitmap);
+        HBRUSH hMaskBrush = CreateSolidBrush(RGB(0, 0, 0));
+        FillRect(hMaskDC, &rect, hMaskBrush);
+        DeleteObject(hMaskBrush);
+
+        ICONINFO ii;
+        ZeroMemory(&ii, sizeof(ii));
+        ii.fIcon = TRUE;
+        ii.hbmMask = hMaskBitmap;
+        ii.hbmColor = hBitmap;
+        HICON hNewIcon = CreateIconIndirect(&ii);
+        hOldIcon = hNewIcon;
+
+        ZeroMemory(&niData, sizeof(niData));
+        niData.cbSize = sizeof(niData);
+        niData.uVersion = NOTIFYICON_VERSION_4;
+        niData.hWnd = hwnd;
+        niData.uID = g_intNotifyIconId;
+        niData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
+        niData.dwInfoFlags = NIIF_NONE;
+        niData.hIcon = hNewIcon;
+        niData.uCallbackMessage = WM_USER_TRAYICONMESSAGE;
+        MakeTooltipText(niData.szTip);
+        Shell_NotifyIcon(NIM_MODIFY, &niData);
+
+        SelectObject(hMaskDC, hOldMaskBitmap);
+        DeleteObject(hMaskBitmap);
+        DeleteDC(hMaskDC);
+        SelectObject(hMemDC, hOldFont);
+        DeleteObject(hFont);
+        SelectObject(hMemDC, hOldBitmap);
+        DeleteObject(hBitmap);
+
+        DeleteDC(hMemDC);
+        ReleaseDC(NULL, hDC);
+    } else {
+        ZeroMemory(&niData, sizeof(niData));
+        niData.cbSize = sizeof(niData);
+        niData.uVersion = NOTIFYICON_VERSION_4;
+        niData.hWnd = hwnd;
+        niData.uID = g_intNotifyIconId;
+        niData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
+        niData.dwInfoFlags = NIIF_NONE;
+        niData.hIcon = LoadImage(g_hInst, MAKEINTRESOURCE(IDI_SYSTRAY_NORMAL), IMAGE_ICON,
+                                 GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+        niData.uCallbackMessage = WM_USER_TRAYICONMESSAGE;
+        MakeTooltipText(niData.szTip);
+        Shell_NotifyIcon(NIM_MODIFY, &niData);
     }
 }
 

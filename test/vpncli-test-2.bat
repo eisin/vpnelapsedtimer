@@ -17,7 +17,7 @@ if "%1" == "stats" (
  echo     Tunnel Mode ^(IPv4^):        Tunnel All Traffic
  echo     Tunnel Mode ^(IPv6^):        Drop All Traffic
  echo     Dynamic Tunnel Exclusion:  None
- echo     Time Connected:            00:00:09
+ echo     Time Connected:            01:29:09
  echo.
  echo [ Address Information ]
  echo.
