@@ -377,7 +377,10 @@ void RefreshTrayIcon(HWND hwnd) {
 
         LOGFONT lf;
         ZeroMemory(&lf, sizeof(lf));
-        lf.lfHeight = 14;
+        lf.lfHeight = GetSystemMetrics(SM_CYSMICON) * 1.5 / 2;
+        if (lf.lfHeight < 14) {
+            lf.lfHeight = 14;
+        }
         lf.lfWeight = FW_NORMAL;
         lf.lfOutPrecision = OUT_TT_PRECIS;
         lf.lfQuality = ANTIALIASED_QUALITY;
